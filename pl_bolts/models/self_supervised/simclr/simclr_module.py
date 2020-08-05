@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import pytorch_lightning as pl
 import torch
 from torch import nn
@@ -273,8 +275,6 @@ class SimCLR(pl.LightningModule):
 
 
 def run_cli():
-    from argparse import ArgumentParser
-
     parser = ArgumentParser()
 
     # trainer args
