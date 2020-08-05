@@ -1,7 +1,7 @@
 import pytest
 
 from pl_bolts.models import LitMNIST
-from pl_bolts.optimizers.layer_adaptive_scaling import LARS, REQUIRED
+from pl_bolts.optimizers.layer_adaptive_scaling import LARS
 from tests import reset_seed
 
 
