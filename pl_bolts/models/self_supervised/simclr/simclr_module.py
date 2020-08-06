@@ -1,42 +1,33 @@
-import pytorch_lightning as pl
 import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.optim.lr_scheduler import StepLR
-from torchvision.models import densenet
 
-from pl_bolts import metrics
+import pytorch_lightning as pl
+from torchlars import LARS
+
 from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDataModule
 from pl_bolts.losses.self_supervised_learning import nt_xent_loss
-from pl_bolts.metrics import mean
-from pl_bolts.models.self_supervised.evaluator import SSLEvaluator
+from pl_bolts.metrics import mean, accuracy
+
+from pl_bolts.models.self_supervised.resnets import resnet50
+from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
 from pl_bolts.optimizers.layer_adaptive_scaling import LARS
 
 
-class DensenetEncoder(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = densenet.densenet121(pretrained=False, num_classes=1)
-        del self.model.classifier
-
-    def forward(self, x):
-        features = self.model.features(x)
-        out = F.relu(features, inplace=True)
-        out = F.adaptive_avg_pool2d(out, (1, 1)).view(features.size(0), -1)
-        return out
-
-
 class Projection(nn.Module):
-    def __init__(self, input_dim=1024, output_dim=128):
+    def __init__(self, input_dim=2048, output_dim=128):
         super().__init__()
         self.output_dim = output_dim
         self.input_dim = input_dim
+
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 512, bias=False),
-            nn.BatchNorm1d(512),
-            nn.ReLU(inplace=True),
-            nn.Linear(512, output_dim, bias=True))
+            nn.AdaptiveAvgPool2d((1, 1)),
+            Flatten(),
+            nn.Linear(input_dim, 512, bias=True),
+            nn.ReLU(),
+            nn.Linear(512, output_dim, bias=False))
 
     def forward(self, x):
         x = self.model(x)
