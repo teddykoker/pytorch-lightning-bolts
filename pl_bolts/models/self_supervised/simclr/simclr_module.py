@@ -149,7 +149,7 @@ class SimCLR(pl.LightningModule):
             )
             self.maxpool = nn.MaxPool2d(kernel_size=1, stride=1)
 
-        self._datamodule = datamodule
+        self.datamodule = datamodule
 
         # TODO: set scheduler params for each step instead of epoch
 
@@ -337,7 +337,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     # trainer args
-    parser = pl.Trainer.add_argparse_args(parser)
+    #parser = pl.Trainer.add_argparse_args(parser)
 
     # model checkpointing callback
     checkpoint_callback = ModelCheckpoint(verbose=True, save_last=True, save_top_k=3)
@@ -378,8 +378,9 @@ if __name__ == '__main__':
 """
 TODOs:
 
-1. datamodules -> manually call, update split?
-2. opt for online
-3. offline eval
-4. LR formula for lars
+1. exclude bn and bias terms
+2. datamodules -> manually call, update split?
+3. opt for online
+4. offline eval
+5. LR formula for lars
 """
