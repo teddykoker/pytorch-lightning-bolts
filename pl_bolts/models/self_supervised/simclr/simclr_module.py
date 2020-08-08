@@ -379,7 +379,6 @@ if __name__ == '__main__':
 TODOs:
 
 1. exclude bn and bias terms
-2. datamodules -> manually call, update split?
 3. opt for online
 4. offline eval
 5. LR formula for lars

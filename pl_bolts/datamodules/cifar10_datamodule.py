@@ -39,7 +39,7 @@ class CIFAR10DataModule(LightningDataModule):
 
         Transforms::
 
-            mnist_transforms = transform_lib.Compose([
+            cifar10_transforms = transform_lib.Compose([
                 transform_lib.ToTensor(),
                 transforms.Normalize(
                     mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
@@ -103,6 +103,7 @@ class CIFAR10DataModule(LightningDataModule):
 
         dataset = self.DATASET(self.data_dir, train=True, download=False, transform=transforms, **self.extra_args)
         train_length = len(dataset)
+
         dataset_train, _ = random_split(
             dataset,
             [train_length - self.val_split, self.val_split],
@@ -128,6 +129,7 @@ class CIFAR10DataModule(LightningDataModule):
 
         dataset = self.DATASET(self.data_dir, train=True, download=False, transform=transforms, **self.extra_args)
         train_length = len(dataset)
+
         _, dataset_val = random_split(
             dataset,
             [train_length - self.val_split, self.val_split],
