@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torchvision.models import resnet50
 from torchlars import LARS
 
 import pytorch_lightning as pl
@@ -13,7 +14,6 @@ from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDat
 from pl_bolts.losses.self_supervised_learning import nt_xent_loss
 from pl_bolts.metrics import mean, accuracy
 
-from pl_bolts.models.self_supervised.resnets import resnet50_bn
 from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization, imagenet_normalization
@@ -162,7 +162,7 @@ class SimCLR(pl.LightningModule):
         return nt_xent_loss
 
     def init_encoder(self):
-        return resnet50_bn()
+        return resnet50()
 
     def init_projection(self):
         return Projection()
@@ -337,9 +337,6 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
 
     parser = ArgumentParser()
-
-    # trainer args
-    #parser = pl.Trainer.add_argparse_args(parser)
 
     # model checkpointing callback
     checkpoint_callback = ModelCheckpoint(verbose=True, save_last=True, save_top_k=3)
