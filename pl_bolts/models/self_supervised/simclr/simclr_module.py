@@ -13,24 +13,26 @@ from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDat
 from pl_bolts.losses.self_supervised_learning import nt_xent_loss
 from pl_bolts.metrics import mean, accuracy
 
-from pl_bolts.models.self_supervised.resnets import resnet50
+from pl_bolts.models.self_supervised.resnets import resnet50_bn
 from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization, imagenet_normalization
 
 
 class Projection(nn.Module):
-    def __init__(self, input_dim=2048, output_dim=128):
+    def __init__(self, input_dim=2048, hidden_dim=2048, output_dim=128):
         super().__init__()
         self.output_dim = output_dim
         self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
 
         self.model = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
             Flatten(),
-            nn.Linear(input_dim, 512, bias=True),
+            nn.Linear(self.input_dim, self.hidden_dim, bias=True),
+            nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
-            nn.Linear(512, output_dim, bias=False))
+            nn.Linear(self.hidden_dim, self.output_dim, bias=False))
 
     def forward(self, x):
         x = self.model(x)
@@ -149,7 +151,7 @@ class SimCLR(pl.LightningModule):
             )
             self.maxpool = nn.MaxPool2d(kernel_size=1, stride=1)
 
-        self._datamodule = datamodule
+        self.datamodule = datamodule
 
         # TODO: set scheduler params for each step instead of epoch
 
@@ -160,7 +162,7 @@ class SimCLR(pl.LightningModule):
         return nt_xent_loss
 
     def init_encoder(self):
-        return resnet50()
+        return resnet50_bn()
 
     def init_projection(self):
         return Projection()
@@ -312,6 +314,7 @@ class SimCLR(pl.LightningModule):
 
         parser.add_argument('--optimizer', choices=['adam', 'lars'], default='lars')
         parser.add_argument('--batch_size', type=int, default=1024)
+        parser.add_argument('--num_workers', default=16, type=int)
         parser.add_argument('--learning_rate', type=float, default=0.1)
         parser.add_argument('--lars_momentum', type=float, default=0.9)
         parser.add_argument('--trust_coef', type=float, default=0.001)
@@ -324,7 +327,6 @@ class SimCLR(pl.LightningModule):
 
         # Model
         parser.add_argument('--loss_temperature', type=float, default=0.5)
-        parser.add_argument('--num_workers', default=16, type=int)
         parser.add_argument('--meta_dir', default='.', type=str, help='path to meta.bin for imagenet')
 
         return parser
@@ -337,7 +339,12 @@ if __name__ == '__main__':
     parser = ArgumentParser()
 
     # trainer args
-    parser = pl.Trainer.add_argparse_args(parser)
+    #parser = pl.Trainer.add_argparse_args(parser)
+
+    # model checkpointing callback
+    checkpoint_callback = ModelCheckpoint(verbose=True, save_last=True, save_top_k=3)
+    lr_logger = LearningRateLogger()
+    logger = WandbLogger(project='simclr')
 
     # model checkpointing callback
     checkpoint_callback = ModelCheckpoint(verbose=True, save_last=True, save_top_k=3)
@@ -378,8 +385,10 @@ if __name__ == '__main__':
 """
 TODOs:
 
-1. datamodules -> manually call, update split?
-2. opt for online
-3. offline eval
-4. LR formula for lars
+scheduler correct steps
+
+1. exclude bn and bias terms
+3. opt for online
+4. offline eval
+5. LR formula for lars
 """

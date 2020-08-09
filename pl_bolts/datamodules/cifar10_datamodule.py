@@ -39,7 +39,7 @@ class CIFAR10DataModule(LightningDataModule):
 
         Transforms::
 
-            mnist_transforms = transform_lib.Compose([
+            cifar10_transforms = transform_lib.Compose([
                 transform_lib.ToTensor(),
                 transforms.Normalize(
                     mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
@@ -71,6 +71,7 @@ class CIFAR10DataModule(LightningDataModule):
             batch_size: number of examples per training/eval step
         """
         super().__init__(*args, **kwargs)
+
         self.dims = (3, 32, 32)
         self.DATASET = CIFAR10
         self.data_dir = data_dir
@@ -102,11 +103,13 @@ class CIFAR10DataModule(LightningDataModule):
 
         dataset = self.DATASET(self.data_dir, train=True, download=False, transform=transforms, **self.extra_args)
         train_length = len(dataset)
+
         dataset_train, _ = random_split(
             dataset,
             [train_length - self.val_split, self.val_split],
             generator=torch.Generator().manual_seed(self.seed)
         )
+
         loader = DataLoader(
             dataset_train,
             batch_size=self.batch_size,
@@ -115,6 +118,7 @@ class CIFAR10DataModule(LightningDataModule):
             drop_last=True,
             pin_memory=True
         )
+
         return loader
 
     def val_dataloader(self):
@@ -125,11 +129,13 @@ class CIFAR10DataModule(LightningDataModule):
 
         dataset = self.DATASET(self.data_dir, train=True, download=False, transform=transforms, **self.extra_args)
         train_length = len(dataset)
+
         _, dataset_val = random_split(
             dataset,
             [train_length - self.val_split, self.val_split],
             generator=torch.Generator().manual_seed(self.seed)
         )
+
         loader = DataLoader(
             dataset_val,
             batch_size=self.batch_size,
@@ -138,6 +144,7 @@ class CIFAR10DataModule(LightningDataModule):
             pin_memory=True,
             drop_last=True
         )
+
         return loader
 
     def test_dataloader(self):
@@ -182,7 +189,7 @@ class TinyCIFAR10DataModule(CIFAR10DataModule):
 
         Transforms::
 
-            mnist_transforms = transform_lib.Compose([
+            cifar10_transforms = transform_lib.Compose([
                 transform_lib.ToTensor(),
                 transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
                                      std=[x / 255.0 for x in [63.0, 62.1, 66.7]])

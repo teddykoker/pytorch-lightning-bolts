@@ -30,7 +30,7 @@ class SimCLRTrainDataTransform(object):
         self,
         input_height: int = 224,
         gaussian_blur: bool = True,
-        jitter_strength: int = 1,
+        jitter_strength: float = 1.,
         normalize: Optional[transforms.Normalize] = None
     ) -> None:
 
@@ -98,6 +98,7 @@ class SimCLREvalDataTransform(object):
         self.input_height = input_height
         self.normalize = normalize
 
+        # TODO: simple resize of random resized crop
         data_transforms = [
             transforms.Resize(self.input_height),
             transforms.ToTensor()
