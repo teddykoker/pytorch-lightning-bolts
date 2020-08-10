@@ -81,6 +81,9 @@ class SimCLR(pl.LightningModule):
             - `William Falcon <https://github.com/williamFalcon>`_
             - `Tullie Murrell <https://github.com/tullie>`_
 
+        TODOs:
+            - add LR formula for ImageNet example (both pre-training and fine-tuning)
+
         Example:
 
             >>> from pl_bolts.models.self_supervised import SimCLR
@@ -285,23 +288,22 @@ class SimCLR(pl.LightningModule):
                 weight_decay=self.hparams.weight_decay
             )
 
-            optimizer = torch.optim.SGD(
+            sgd_optim = torch.optim.SGD(
                 parameters,
                 lr=self.hparams.learning_rate,
-                momentum=self.hparams.lars_momentum,
+                momentum=self.hparams.optim_momentum,
                 weight_decay=self.hparams.weight_decay,
             )
 
             optimizer = LARS(
-                optimizer=optimizer,
+                optimizer=sgd_optim,
                 eps=1e-8,
-                trust_coefficient=self.hparams.trust_coef,
-                clip=False
+                trust_coef=self.hparams.trust_coef
             )
         else:
             raise ValueError(f'Invalid optimizer: {self.optimizer}')
 
-        scheduler = LinearWarmupCosineAnnealingLR(
+        linear_warmup_cosine_decay = LinearWarmupCosineAnnealingLR(
             optimizer,
             warmup_epochs=self.hparams.warmup_epochs,
             max_epochs=self.hparams.max_epochs,
@@ -310,12 +312,12 @@ class SimCLR(pl.LightningModule):
         )
 
         scheduler = {
-            'scheduler': scheduler,
+            'scheduler': linear_warmup_cosine_decay,
             'interval': 'step',
             'frequency': 1
         }
 
-        return optimizer, scheduler
+        return [optimizer], [scheduler]
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -337,7 +339,7 @@ class SimCLR(pl.LightningModule):
         parser.add_argument('--batch_size', type=int, default=1024)
         parser.add_argument('--num_workers', default=16, type=int)
         parser.add_argument('--learning_rate', type=float, default=0.1)
-        parser.add_argument('--lars_momentum', type=float, default=0.9)
+        parser.add_argument('--optim_momentum', type=float, default=0.9)
         parser.add_argument('--trust_coef', type=float, default=0.001)
         parser.add_argument('--weight_decay', type=float, default=1e-6)
 
@@ -398,15 +400,13 @@ if __name__ == '__main__':
         checkpoint_callback=checkpoint_callback,
         callbacks=[lr_logger]
     )
+
     trainer.fit(model)
 
 """
 TODOs:
 
-scheduler correct steps
-
-1. exclude bn and bias terms
-3. opt for online
-4. offline eval
-5. LR formula for lars
+1. scheduler correct steps
+2. opt for online
+3. offline eval
 """
