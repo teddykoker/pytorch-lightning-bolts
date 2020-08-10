@@ -157,12 +157,13 @@ class SimCLR(pl.LightningModule):
         self.datamodule = datamodule
 
         # hack to get num data samples in training set
-        print('$$$$$$$$$$$$$$$$')
-        print(self.train_length)
         self.datamodule.val_dataloader()
-        print(self.train_length)
-        print('$$$$$$$$$$$$$$$$')
-        exit(-1)
+        train_samples = self.datamodule.train_length
+        gpu_count = self.hparams.gpus * self.hparams.num_nodes
+
+        self.train_iters_per_epoch = train_samples // (
+            gpu_count * self.hparams.accumulate_grad_batches * self.hparams.batch_size
+        )
 
         if self.online_ft:
             self.online_evaluator = LinearEval(num_classes=self.datamodule.num_classes)
@@ -311,8 +312,8 @@ class SimCLR(pl.LightningModule):
             raise ValueError(f'Invalid optimizer: {self.optimizer}')
 
         if self.hparams.sched_per_step:
-            self.hparams.warmup_epochs = self.hparams.warmup_epochs * len
-            self.hparams.max_epochs = self.hparams.max_epochs * len
+            self.hparams.warmup_epochs = self.hparams.warmup_epochs * self.train_iters_per_epoch
+            self.hparams.max_epochs = self.hparams.max_epochs * self.train_iters_per_epoch
 
         linear_warmup_cosine_decay = LinearWarmupCosineAnnealingLR(
             optimizer,
@@ -348,6 +349,8 @@ class SimCLR(pl.LightningModule):
         parser.add_argument('--gpus', type=int, default=2)
         parser.add_argument('--sync_batchnorm', type=bool, default=True)
         parser.add_argument('--distributed_backend', type=str, default='ddp')
+        parser.add_argument('--accumulate_grad_batches', type=int, default=1)
+        parser.add_argument('--num_nodes', type=int, default=1)
 
         parser.add_argument('--optimizer', choices=['adam', 'lars'], default='lars')
         parser.add_argument('--batch_size', type=int, default=1024)
@@ -421,7 +424,6 @@ if __name__ == '__main__':
 """
 TODOs:
 
-1. scheduler correct steps
 2. opt for online
 3. offline eval
 """
