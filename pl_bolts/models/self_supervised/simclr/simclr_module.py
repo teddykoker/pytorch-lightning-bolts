@@ -16,7 +16,8 @@ from pl_bolts.metrics import mean, accuracy
 
 from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
-from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization, imagenet_normalization
+from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization
+from pl_bolts.transforms.dataset_normalizations import imagenet_normalization
 
 
 class Projection(nn.Module):
@@ -155,7 +156,13 @@ class SimCLR(pl.LightningModule):
 
         self.datamodule = datamodule
 
-        # TODO: set scheduler params for each step instead of epoch
+        # hack to get num data samples in training set
+        print('$$$$$$$$$$$$$$$$')
+        print(self.train_length)
+        self.datamodule.val_dataloader()
+        print(self.train_length)
+        print('$$$$$$$$$$$$$$$$')
+        exit(-1)
 
         if self.online_ft:
             self.online_evaluator = LinearEval(num_classes=self.datamodule.num_classes)
@@ -303,6 +310,10 @@ class SimCLR(pl.LightningModule):
         else:
             raise ValueError(f'Invalid optimizer: {self.optimizer}')
 
+        if self.hparams.sched_per_step:
+            self.hparams.warmup_epochs = self.hparams.warmup_epochs * len
+            self.hparams.max_epochs = self.hparams.max_epochs * len
+
         linear_warmup_cosine_decay = LinearWarmupCosineAnnealingLR(
             optimizer,
             warmup_epochs=self.hparams.warmup_epochs,
@@ -311,11 +322,14 @@ class SimCLR(pl.LightningModule):
             eta_min=self.hparams.eta_min
         )
 
-        scheduler = {
-            'scheduler': linear_warmup_cosine_decay,
-            'interval': 'step',
-            'frequency': 1
-        }
+        if self.hparams.sched_per_step:
+            scheduler = {
+                'scheduler': linear_warmup_cosine_decay,
+                'interval': 'step',
+                'frequency': 1
+            }
+        else:
+            scheduler = linear_warmup_cosine_decay
 
         return [optimizer], [scheduler]
 
@@ -343,6 +357,7 @@ class SimCLR(pl.LightningModule):
         parser.add_argument('--trust_coef', type=float, default=0.001)
         parser.add_argument('--weight_decay', type=float, default=1e-6)
 
+        parser.add_argument('--sched_per_step', type=bool, default=True)
         parser.add_argument('--warmup_epochs', type=int, default=10)
         parser.add_argument('--max_epochs', type=int, default=100)
         parser.add_argument('--warmup_start_lr', type=float, default=0.)
