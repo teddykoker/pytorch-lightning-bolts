@@ -76,6 +76,9 @@ class CIFAR10DataModule(LightningDataModule):
         self.DATASET = CIFAR10
         self.data_dir = data_dir
         self.val_split = val_split
+
+        # set later
+        self.train_length = None
         self.num_workers = num_workers
         self.batch_size = batch_size
         self.seed = seed
