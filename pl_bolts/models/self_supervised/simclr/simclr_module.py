@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torchvision.models import resnet50
 from torchlars import LARS
 
 import pytorch_lightning as pl
@@ -9,6 +8,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateLogger
 
+from pl_bolts.models.self_supervised.resnets import resnet50_bn
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDataModule
 from pl_bolts.losses.self_supervised_learning import nt_xent_loss
@@ -136,7 +136,6 @@ class SimCLR(pl.LightningModule):
 
             datamodule.train_transforms = SimCLRTrainDataTransform(
                 input_height,
-                jitter_strength=0.5,
                 gaussian_blur=False,
                 normalize=normalize
             )
@@ -162,7 +161,7 @@ class SimCLR(pl.LightningModule):
         return nt_xent_loss
 
     def init_encoder(self):
-        return resnet50()
+        return resnet50_bn()
 
     def init_projection(self):
         return Projection()
@@ -257,6 +256,23 @@ class SimCLR(pl.LightningModule):
 
         return result
 
+    def exclude_from_wt_decay(self, named_params, weight_decay, skip_list=['bias', 'bn']):
+        params = []
+        excluded_params = []
+
+        for name, param in named_params:
+            if not param.requires_grad:
+                continue
+            elif any(layer_name in name for layer_name in skip_list):
+                excluded_params.append(param)
+            else:
+                params.append(param)
+
+        return [
+            {'params': params, 'weight_decay': weight_decay},
+            {'params': excluded_params, 'weight_decay': 0.}
+        ]
+
     # TODO: separate opt, scheduler for online eval
     def configure_optimizers(self):
         if self.hparams.optimizer == 'adam':
@@ -264,8 +280,13 @@ class SimCLR(pl.LightningModule):
                 self.parameters(), self.hparams.learning_rate, weight_decay=self.hparams.weight_decay
             )
         elif self.hparams.optimizer == 'lars':
+            parameters = self.exclude_from_wt_decay(
+                self.named_parameters(),
+                weight_decay=self.hparams.weight_decay
+            )
+
             optimizer = torch.optim.SGD(
-                self.parameters(),
+                parameters,
                 lr=self.hparams.learning_rate,
                 momentum=self.hparams.lars_momentum,
                 weight_decay=self.hparams.weight_decay,
