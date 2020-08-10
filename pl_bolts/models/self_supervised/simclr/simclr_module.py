@@ -204,7 +204,6 @@ class SimCLR(pl.LightningModule):
 
             with torch.no_grad():
                 h1 = self.forward(img_1)
-                z1 = self.projection(h1)
 
             # no grads to unsupervised encoder
             h_feats = h1.detach()
