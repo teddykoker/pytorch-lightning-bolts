@@ -280,7 +280,7 @@ class CPCV2(pl.LightningModule):
         return parser
 
 
-def cli_main():
+def run_cli():
     pl.seed_everything(1234)
     parser = ArgumentParser()
     parser = pl.Trainer.add_argparse_args(parser)
@@ -317,4 +317,4 @@ def cli_main():
 
 
 if __name__ == '__main__':
-    cli_main()
+    run_cli()
