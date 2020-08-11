@@ -14,6 +14,7 @@ from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDat
 from pl_bolts.losses.self_supervised_learning import nt_xent_loss
 from pl_bolts.metrics import mean, accuracy
 
+from pl_bolts.models.self_supervised.utils import concat_all_gather
 from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization
@@ -81,9 +82,7 @@ class SimCLR(pl.LightningModule):
 
             - `William Falcon <https://github.com/williamFalcon>`_
             - `Tullie Murrell <https://github.com/tullie>`_
-
-        TODOs:
-            - add LR formula for ImageNet example (both pre-training and fine-tuning)
+            - `Ananya Harsh Jha <https://github.com/ananyahjha93>`_
 
         Example:
 
@@ -262,7 +261,7 @@ class SimCLR(pl.LightningModule):
             log['val_mlp_acc'] = mlp_acc
             log['val_mlp_loss'] = mlp_loss
 
-        result.log_dict(log)
+        result.log_dict(log, sync_ddp=True)
 
         return result
 
@@ -283,32 +282,24 @@ class SimCLR(pl.LightningModule):
             {'params': excluded_params, 'weight_decay': 0.}
         ]
 
-    # TODO: separate opt, scheduler for online eval
     def configure_optimizers(self):
-        if self.hparams.optimizer == 'adam':
-            optimizer = torch.optim.Adam(
-                self.parameters(), self.hparams.learning_rate, weight_decay=self.hparams.weight_decay
-            )
-        elif self.hparams.optimizer == 'lars':
-            parameters = self.exclude_from_wt_decay(
-                self.named_parameters(),
-                weight_decay=self.hparams.weight_decay
-            )
+        parameters = self.exclude_from_wt_decay(
+            self.named_parameters(),
+            weight_decay=self.hparams.weight_decay
+        )
 
-            sgd_optim = torch.optim.SGD(
-                parameters,
-                lr=self.hparams.learning_rate,
-                momentum=self.hparams.optim_momentum,
-                weight_decay=self.hparams.weight_decay,
-            )
+        sgd_optim = torch.optim.SGD(
+            parameters,
+            lr=self.hparams.learning_rate,
+            momentum=self.hparams.optim_momentum,
+            weight_decay=self.hparams.weight_decay,
+        )
 
-            optimizer = LARS(
-                optimizer=sgd_optim,
-                eps=1e-8,
-                trust_coef=self.hparams.trust_coef
-            )
-        else:
-            raise ValueError(f'Invalid optimizer: {self.optimizer}')
+        optimizer = LARS(
+            optimizer=sgd_optim,
+            eps=1e-8,
+            trust_coef=self.hparams.trust_coef
+        )
 
         if self.hparams.sched_per_step:
             self.hparams.warmup_epochs = self.hparams.warmup_epochs * self.train_iters_per_epoch
@@ -422,7 +413,11 @@ if __name__ == '__main__':
 
 """
 TODOs:
+ - get all negative samples on single GPU from entire batch - ddp uses negatives from single GPU
+ - script tests
 
-2. opt for online
-3. offline eval
+ - verify results on LARS with sync negatives else change to Adam, solve configure_optimizers (provide Adam for smaller batches)
+ - offline eval using nesterov optimizer mentioned in the paper
+ 
+ - add LR formula for ImageNet example (both pre-training and fine-tuning)
 """
