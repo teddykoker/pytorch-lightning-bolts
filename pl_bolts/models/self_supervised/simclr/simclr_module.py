@@ -261,7 +261,7 @@ class SimCLR(pl.LightningModule):
             log['val_mlp_acc'] = mlp_acc
             log['val_mlp_loss'] = mlp_loss
 
-        result.log_dict(log, sync_ddp=True)
+        result.log_dict(log)
 
         return result
 
@@ -374,11 +374,6 @@ if __name__ == '__main__':
     lr_logger = LearningRateLogger()
     logger = WandbLogger(project='simclr')
 
-    # model checkpointing callback
-    checkpoint_callback = ModelCheckpoint(verbose=True, save_last=True, save_top_k=3)
-    lr_logger = LearningRateLogger()
-    logger = WandbLogger(project='simclr')
-
     # model args
     parser = SimCLR.add_model_specific_args(parser)
     args = parser.parse_args()
@@ -413,7 +408,9 @@ if __name__ == '__main__':
 
 """
 TODOs:
+ - sync ddp results API
  - get all negative samples on single GPU from entire batch - ddp uses negatives from single GPU
+ - all_gather for TPUs
  - script tests
 
  - verify results on LARS with sync negatives else change to Adam, solve configure_optimizers (provide Adam for smaller batches)

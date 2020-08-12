@@ -9,6 +9,15 @@ def nt_xent_loss(out_1, out_2, temperature):
     """
     Loss used in SimCLR
     """
+
+    # TODO: gather tensors from all processes in DDP
+    # make sure this works for ddp
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        print('$$$$$$$$$$$$')
+        print('This executes')
+        print('$$$$$$$$$$$$')
+    exit(-1)
+
     out = torch.cat([out_1, out_2], dim=0)
     n_samples = len(out)
 
