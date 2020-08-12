@@ -14,7 +14,6 @@ from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDat
 from pl_bolts.losses.self_supervised_learning import nt_xent_loss
 from pl_bolts.metrics import mean, accuracy
 
-from pl_bolts.models.self_supervised.utils import concat_all_gather
 from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization

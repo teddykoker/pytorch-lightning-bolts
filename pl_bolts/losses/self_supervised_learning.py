@@ -3,6 +3,7 @@ import torch
 from torch import nn
 
 from pl_bolts.models.vision.pixel_cnn import PixelCNN
+from pl_bolts.models.self_supervised.utils import concat_all_gather
 
 
 def nt_xent_loss(out_1, out_2, temperature):
@@ -10,26 +11,25 @@ def nt_xent_loss(out_1, out_2, temperature):
     Loss used in SimCLR
     """
 
-    # TODO: gather tensors from all processes in DDP
-    # make sure this works for ddp
+    # Negative similarity (from tensors on all GPUs in DDP)
     if torch.distributed.is_available() and torch.distributed.is_initialized():
-        print('$$$$$$$$$$$$')
-        print('This executes')
-        print('$$$$$$$$$$$$')
-    exit(-1)
+        out_1_neg = concat_all_gather(out_1)
+        out_2_neg = concat_all_gather(out_2)
+    else:
+        out_1_neg = out_1
+        out_2_neg = out_2
 
-    out = torch.cat([out_1, out_2], dim=0)
+    out = torch.cat([out_1_neg, out_2_neg], dim=0)
     n_samples = len(out)
 
-    # Full similarity matrix
+    # Full similarity matrix (with samples from all )
     cov = torch.mm(out, out.t().contiguous())
     sim = torch.exp(cov / temperature)
 
-    # Negative similarity
     mask = ~torch.eye(n_samples, device=sim.device).bool()
     neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
 
-    # Positive similarity :
+    # Positive similarity (only from tensors on this GPU in DDP)
     pos = torch.exp(torch.sum(out_1 * out_2, dim=-1) / temperature)
     pos = torch.cat([pos, pos], dim=0)
     loss = -torch.log(pos / neg).mean()
