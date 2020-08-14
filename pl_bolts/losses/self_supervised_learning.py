@@ -8,21 +8,18 @@ from pl_bolts.models.self_supervised.utils import concat_all_gather
 
 def nt_xent_loss(out_1, out_2, temperature):
     """
-    Loss used in SimCLR
+    Loss used in SimCLR, assumes vectors are normalized
+    
+    Args:
+        out_1 (torch.Tensor): 2D tensor with dimension [batch, dim of proj. output]
+        out_2 (torch.Tensor): 2D tensor with dimension [batch, dim of proj. output]
+        temperature (float): temperature for contrastive loss, between (0., 1.]
     """
 
-    # Negative similarity (from tensors on all GPUs in DDP)
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        out_1_neg = concat_all_gather(out_1)
-        out_2_neg = concat_all_gather(out_2)
-    else:
-        out_1_neg = out_1
-        out_2_neg = out_2
-
-    out = torch.cat([out_1_neg, out_2_neg], dim=0)
+    out = torch.cat([out_1, out_2], dim=0)
     n_samples = len(out)
 
-    # Full similarity matrix (with samples from all )
+    # Full similarity matrix
     cov = torch.mm(out, out.t().contiguous())
     sim = torch.exp(cov / temperature)
 

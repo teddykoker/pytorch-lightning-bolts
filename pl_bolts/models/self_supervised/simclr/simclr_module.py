@@ -11,13 +11,73 @@ from pytorch_lightning.callbacks import LearningRateLogger
 from pl_bolts.models.self_supervised.resnets import resnet50_bn
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from pl_bolts.datamodules import CIFAR10DataModule, STL10DataModule, ImagenetDataModule
-from pl_bolts.losses.self_supervised_learning import nt_xent_loss
+#from pl_bolts.losses.self_supervised_learning import nt_xent_loss
+#from pl_bolts.models.self_supervised.utils import concat_all_gather
 from pl_bolts.metrics import mean, accuracy
 
 from pl_bolts.models.self_supervised.evaluator import SSLEvaluator, Flatten
 from pl_bolts.models.self_supervised.simclr.simclr_transforms import SimCLREvalDataTransform, SimCLRTrainDataTransform
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, stl10_normalization
 from pl_bolts.transforms.dataset_normalizations import imagenet_normalization
+
+
+def concat_all_gather(tensor):
+    """
+    Performs all_gather operation on the provided tensors.
+    *** Warning ***: torch.distributed.all_gather has no gradient.
+    """
+    tensors_gather = [torch.ones_like(tensor)
+                      for _ in range(torch.distributed.get_world_size())]
+    torch.distributed.all_gather(tensors_gather, tensor, async_op=False)
+
+    output = torch.cat(tensors_gather, dim=0)
+    return output
+
+
+def nt_xent_loss(out_1, out_2, temperature):
+    """
+    Loss used in SimCLR, assumes vectors are normalized
+    
+    Args:
+        out_1 (torch.Tensor): 2D tensor with dimension [batch, dim of proj. output]
+        out_2 (torch.Tensor): 2D tensor with dimension [batch, dim of proj. output]
+        temperature (float): temperature for contrastive loss, between (0., 1.]
+    """
+
+    """
+    # Negative similarity (from tensors on all GPUs in DDP)
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        out_1_gathered = concat_all_gather(out_1)
+        out_2_gathered = concat_all_gather(out_2)
+    else:
+        out_1_gathered = out_1
+        out_2_gathered = out_2
+    """
+
+    out = torch.cat([out_1, out_2], dim=0)
+    #out_gathered = torch.cat([out_1_gathered, out_2_gathered], dim=0)
+    n_samples = len(out)
+
+    # Full similarity matrix (with samples from all GPUs in case of DDP)
+    #cov = torch.mm(out, out_gathered.t().contiguous())
+    cov = torch.mm(out, out.t().contiguous())
+    sim = torch.exp(cov / temperature)
+
+    """
+    # subtract for removing cosine similarity of vector with itself
+    neg = sim.sum(dim=-1)
+    neg = neg - torch.exp(torch.Tensor([1 / temperature])).to(neg.device) + torch.Tensor([1e-8]).to(neg.device)
+    """
+
+    mask = ~torch.eye(n_samples, device=sim.device).bool()
+    neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
+
+    # Positive similarity (only from tensors on this GPU in DDP)
+    pos = torch.exp(torch.sum(out_1 * out_2, dim=-1) / temperature)
+    pos = torch.cat([pos, pos], dim=0)
+    loss = -torch.log(pos / neg).mean()
+
+    return loss
 
 
 class Projection(nn.Module):
@@ -178,6 +238,9 @@ class SimCLR(pl.LightningModule):
     def forward(self, x):
         return self.encoder(x)[-1]
 
+    def calc_lr(self, batch_size):
+        return 0.075 * math.sqrt(batch_size)
+
     def training_step(self, batch, batch_idx):
         if isinstance(self.datamodule, STL10DataModule):
             labeled_batch = batch[1]
@@ -241,8 +304,8 @@ class SimCLR(pl.LightningModule):
             preds = self.online_evaluator(h1)
             mlp_loss = F.cross_entropy(preds, y)
 
-            acc = accuracy(preds, y)
-            result['mlp_acc'] = acc
+            mlp_acc = accuracy(preds, y)
+            result['mlp_acc'] = mlp_acc
             result['mlp_loss'] = mlp_loss
 
         return result
@@ -251,16 +314,15 @@ class SimCLR(pl.LightningModule):
         val_loss = mean(outputs, 'val_loss')
 
         result = pl.EvalResult(checkpoint_on=val_loss)
+        result.log('val_loss', val_loss, sync_dist=True)
 
-        log = dict(val_loss=val_loss)
         if self.online_ft:
-            mlp_acc = mean(outputs, 'mlp_acc')
+            # TODO: fix the cpu bug
+            mlp_acc = mean(outputs, 'mlp_acc').to(val_loss.device)
             mlp_loss = mean(outputs, 'mlp_loss')
-
-            log['val_mlp_acc'] = mlp_acc
-            log['val_mlp_loss'] = mlp_loss
-
-        result.log_dict(log)
+            
+            result.log('val_mlp_acc', mlp_acc, sync_dist=True)
+            result.log('val_mlp_loss', mlp_loss, sync_dist=True)
 
         return result
 
@@ -287,9 +349,10 @@ class SimCLR(pl.LightningModule):
             weight_decay=self.hparams.weight_decay
         )
 
+        lr = self.calc_lr(self.hparams.batch_size) if self.hparams.lr_formula else self.hparams.learning_rate
         sgd_optim = torch.optim.SGD(
             parameters,
-            lr=self.hparams.learning_rate,
+            lr=lr,
             momentum=self.hparams.optim_momentum,
             weight_decay=self.hparams.weight_decay,
         )
@@ -299,10 +362,18 @@ class SimCLR(pl.LightningModule):
             eps=1e-8,
             trust_coef=self.hparams.trust_coef
         )
+        
+        """
+        optimizer = torch.optim.Adam(
+            parameters,
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
+        """
 
-        if self.hparams.sched_per_step:
-            self.hparams.warmup_epochs = self.hparams.warmup_epochs * self.train_iters_per_epoch
-            self.hparams.max_epochs = self.hparams.max_epochs * self.train_iters_per_epoch
+        # configure epochs to steps
+        self.hparams.warmup_epochs = self.hparams.warmup_epochs * self.train_iters_per_epoch
+        self.hparams.max_epochs = self.hparams.max_epochs * self.train_iters_per_epoch
 
         linear_warmup_cosine_decay = LinearWarmupCosineAnnealingLR(
             optimizer,
@@ -312,14 +383,11 @@ class SimCLR(pl.LightningModule):
             eta_min=self.hparams.eta_min
         )
 
-        if self.hparams.sched_per_step:
-            scheduler = {
-                'scheduler': linear_warmup_cosine_decay,
-                'interval': 'step',
-                'frequency': 1
-            }
-        else:
-            scheduler = linear_warmup_cosine_decay
+        scheduler = {
+            'scheduler': linear_warmup_cosine_decay,
+            'interval': 'step',
+            'frequency': 1
+        }
 
         return [optimizer], [scheduler]
 
@@ -332,11 +400,11 @@ class SimCLR(pl.LightningModule):
         (args, _) = parser.parse_known_args()
         # Data
         parser.add_argument('--data_dir', type=str, default='.')
-        parser.add_argument('--normalize_data', type=bool, default=False)
+        parser.add_argument('--normalize_data', action='store_true')
 
         # Training
         parser.add_argument('--gpus', type=int, default=2)
-        parser.add_argument('--sync_batchnorm', type=bool, default=True)
+        parser.add_argument('--sync_batchnorm', action='store_true')
         parser.add_argument('--distributed_backend', type=str, default='ddp')
         parser.add_argument('--accumulate_grad_batches', type=int, default=1)
         parser.add_argument('--num_nodes', type=int, default=1)
@@ -344,12 +412,14 @@ class SimCLR(pl.LightningModule):
         parser.add_argument('--optimizer', choices=['adam', 'lars'], default='lars')
         parser.add_argument('--batch_size', type=int, default=1024)
         parser.add_argument('--num_workers', default=16, type=int)
+
+        parser.add_argument('--lr_formula', action='store_true')
         parser.add_argument('--learning_rate', type=float, default=0.1)
+
         parser.add_argument('--optim_momentum', type=float, default=0.9)
         parser.add_argument('--trust_coef', type=float, default=0.001)
         parser.add_argument('--weight_decay', type=float, default=1e-6)
 
-        parser.add_argument('--sched_per_step', type=bool, default=True)
         parser.add_argument('--warmup_epochs', type=int, default=10)
         parser.add_argument('--max_epochs', type=int, default=100)
         parser.add_argument('--warmup_start_lr', type=float, default=0.)
@@ -407,7 +477,6 @@ if __name__ == '__main__':
 
 """
 TODOs:
- - sync ddp results API
  - get all negative samples on single GPU from entire batch - ddp uses negatives from single GPU
  - all_gather for TPUs
  - script tests
@@ -415,5 +484,4 @@ TODOs:
  - verify results on LARS with sync negatives else change to Adam, solve configure_optimizers (provide Adam for smaller batches)
  - offline eval using nesterov optimizer mentioned in the paper
  
- - add LR formula for ImageNet example (both pre-training and fine-tuning)
 """
