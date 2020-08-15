@@ -1,12 +1,12 @@
 import pytest
+from pytorch_lightning import seed_everything
 
 from pl_bolts.models import LitMNIST
 from pl_bolts.optimizers.layer_adaptive_scaling import LARS
-from tests import reset_seed
 
 
 def test_lars_lr_greater_than_zero(tmpdir):
-    reset_seed()
+    seed_everything()
 
     model = LitMNIST()
     with pytest.raises(ValueError, match='Invalid learning rate.*'):
@@ -16,7 +16,7 @@ def test_lars_lr_greater_than_zero(tmpdir):
 
 
 def test_lars_momentum_greater_than_zero(tmpdir):
-    reset_seed()
+    seed_everything()
 
     model = LitMNIST()
     with pytest.raises(ValueError, match='Invalid momentum.*'):
@@ -26,7 +26,7 @@ def test_lars_momentum_greater_than_zero(tmpdir):
 
 
 def test_lars_weight_decay_greater_than_zero(tmpdir):
-    reset_seed()
+    seed_everything()
 
     model = LitMNIST()
     with pytest.raises(ValueError, match='Invalid weight_decay.*'):
@@ -36,7 +36,7 @@ def test_lars_weight_decay_greater_than_zero(tmpdir):
 
 
 def test_lars_eta_greater_than_zero(tmpdir):
-    reset_seed()
+    seed_everything()
 
     model = LitMNIST()
     with pytest.raises(ValueError, match='Invalid LARS coefficient.*'):
